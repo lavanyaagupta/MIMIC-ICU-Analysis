@@ -1,0 +1,16 @@
+# Decisions Log
+Running notes on reasoning, trade-offs, and decisions made throughout this project.
+
+## Question Scoping
+- How do vital sign trends in the first 24h differ between patients who survive vs. don't?
+- Narrow enough to be answerable with a clear cohort and time window, but rich enough to require real wrangling (multi-table joins, irregular time series, unit standardization).
+
+## Table Selection
+- **Chose `ICUSTAYS.INTIME`** as the anchor for "first 24h" rather than `ADMISSIONS.ADMITTIME`, because ICU admission time is the more clinically relevant start point for vital sign monitoring.
+- **Chose `CHARTEVENTS` over `LABEVENTS`** because vital signs (HR, BP, RR, temp, SpO2) are recorded as chart events, not lab results, in MIMIC-III.
+
+## Cohort Definition
+
+## Cleaning Decisions
+
+## Trade-offs 
