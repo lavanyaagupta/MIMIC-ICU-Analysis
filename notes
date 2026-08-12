@@ -1,16 +1,61 @@
 # Decisions Log
-Running notes on reasoning, trade-offs, and decisions made throughout this project.
-
-## Question Scoping
-- How do vital sign trends in the first 24h differ between patients who survive vs. don't?
-- Narrow enough to be answerable with a clear cohort and time window, but rich enough to require real wrangling (multi-table joins, irregular time series, unit standardization).
-
 ## Table Selection
-- **Chose `ICUSTAYS.INTIME`** as the anchor for "first 24h" rather than `ADMISSIONS.ADMITTIME`, because ICU admission time is the more clinically relevant start point for vital sign monitoring.
-- **Chose `CHARTEVENTS` over `LABEVENTS`** because vital signs (HR, BP, RR, temp, SpO2) are recorded as chart events, not lab results, in MIMIC-III.
 
-## Cohort Definition
+- Chose `ICUSTAYS.INTIME` as the anchor for "first 24h" rather than `ADMISSIONS.ADMITTIME`, because ICU admission is the more clinically relevant start point for vital sign monitoring.
+- Chose `CHARTEVENTS` over `LABEVENTS` because vital signs (HR, BP, RR, temp, SpO2) are recorded as chart events, not lab results, in MIMIC-III.
 
-## Cleaning Decisions
+## Join Keys
 
-## Trade-offs 
+- Merged on `HADM_ID` (and `SUBJECT_ID` where both tables share it), not `SUBJECT_ID` alone. A single patient (`SUBJECT_ID`) can have multiple hospital admissions over time. Merging on `SUBJECT_ID` alone risked mixing vitals from one admission with the outcome of a different admission for the same patient. `HADM_ID` correctly scopes everything to one specific hospital stay.
+- When merging `icu` + `admissions`, both tables share `subject_id` and `hadm_id`. Merging on `hadm_id` alone caused pandas to append `_x`/`_y` suffixes to the un-merged `subject_id` column, breaking later merges. Fixed by merging on `['subject_id', 'hadm_id']` together.
+- `PATIENTS` is merged on `SUBJECT_ID` only, since demographics (DOB, gender) don't change between a patient's admissions.
+
+## Outcome Variable
+
+- Created `survived = 1 - hospital_expire_flag` as the binary outcome label.
+
+## Vital Sign ITEMID Selection
+
+ITEMIDs are arbitrary dictionary keys in `D_ITEMS`, not meaningful values themselves. Multiple itemids map to the same vital because MIMIC-III spans two different hospital charting systems used at different time periods — CareVue (older) and Metavision (newer). A given patient's stay lives entirely in one system, never both, so both itemids are included to avoid losing either era of patients.
+
+```python
+vital_itemids = {
+    'heart_rate': [211, 220045],
+    'resp_rate': [618, 220210],
+    'temperature_c': [676, 223762],
+    'spo2': [646, 220277],
+    'sbp': [51, 455, 220050, 220179],
+    'dbp': [8368, 8441, 220051, 220180],
+}
+```
+
+**Exclusions and reasoning:**
+- Heart rate: excluded `3494` (Lowest Heart Rate: a derived summary stat, not a raw reading) and alarm threshold itemids (not actual measurements).
+- Respiratory rate: excluded "(Set)" itemids: these are ventilator target settings, not the patient's actual rate. Excluded "(spontaneous)"/"(Total)" breakdowns to keep one consistent reading type per vital.
+- Temperature: standardized on Celsius only (excluded Fahrenheit itemids) to avoid mixing unit systems. Excluded site-specific readings (skin, RLE, RUE) — not core body temp.
+- SpO2: excluded venous O2 sat, mixed venous O2 sat, and PA-line O2 saturation — these measure oxygen saturation in venous/pulmonary-artery blood, physiologically different from peripheral SpO2.
+- Blood pressure: included both Arterial (invasive) and Non-Invasive/NBP itemids, since most patients have only one or the other, not both. Excluded site-specific (Left Arm, Right Leg) and manual/orthostatic readings — one-off spot checks, not continuous monitoring.
+
+## Data Cleaning
+
+- Filtered `CHARTEVENTS` to target itemids *before* merging with the cohort table — the full table is tens of millions of rows, too large to merge unfiltered.
+- Restricted readings to `0 <= hours_since_admission <= 24`. Excluded negative values (readings charted slightly before official ICU `intime`, e.g. carried over from the ED) as out of scope for a "first 24h" window.
+- Dropped rows with null `valuenum` (non-numeric/free-text entries).
+- Dropped rows flagged `error == 1` in `CHARTEVENTS`.
+- Applied physiologically plausible ranges per vital to catch data entry errors:
+  - Heart rate: 20–300 bpm
+  - Respiratory rate: 0–70
+  - Temperature: 25–44°C (also serves to catch any Fahrenheit values mistakenly included)
+  - SpO2: 0–100%
+  - SBP: 20–300 mmHg
+  - DBP: 10–250 mmHg
+- Averaged duplicate readings occurring for the same patient/vital/timestamp rather than treating them as separate data points.
+
+## Aggregation
+
+- Binned readings into hourly buckets (`hour = floor(hours_since_admission)`) per patient per vital, averaging multiple readings within the same hour.
+- Aggregated across patients within each outcome group (`survived` 0/1) per vital per hour to produce trend lines.
+
+## Trade-offs / Things Noted But Not Yet Addressed
+
+- Non-survivor group size should be checked (`df['survived'].value_counts()`) before over-interpreting trend lines — the MIMIC-III demo subset is small (~100 patients), so a shaky trend line could reflect a handful of patients rather than a real pattern.
