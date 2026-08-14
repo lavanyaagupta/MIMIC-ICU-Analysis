@@ -1,0 +1,43 @@
+# To execute after completing all of exploration
+
+# plot each vital, survivors vs. non-survivors
+import matplotlib.pyplot as plt
+
+vitals_list = trend['vital'].unique()
+
+fig, axes = plt.subplots(len(vitals_list), 1, figsize=(8, 4 * len(vitals_list)))
+
+for ax, vital in zip(axes, vitals_list):
+    subset = trend[trend['vital'] == vital]
+    for outcome, label, color in [(1, 'Survived', 'tab:blue'), (0, 'Did not survive', 'tab:red')]:
+        line = subset[subset['survived'] == outcome].sort_values('hour')
+        ax.plot(line['hour'], line['valuenum'], label=label, color=color, marker='o', markersize=3)
+    ax.set_title(vital)
+    ax.set_xlabel('Hours since ICU admission')
+    ax.set_ylabel('Mean value')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+import os
+os.makedirs('figures', exist_ok=True)
+
+fig, axes = plt.subplots(len(vitals_list), 1, figsize=(8,4 * len(vitals_list)))
+
+for ax, vital in zip(axes, vitals_list):
+    subset = trend[trend['vital'] == vital]
+    for outcome, label, color in [(1, 'Survived', 'tab:blue'), (0, 'Did not survive', 'tab:red')]:
+        line = subset[subset['survived'] == outcome].sort_values('hour')
+        ax.plot(line['hour'], line['valuenum'], label = label, color = color, marker = 'o', markersize=3)
+    ax.set_title(vital)
+    ax.set_xlabel('Hours since ICU admission')
+    ax.set_ylabel('Mean value')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('figures/vital_trends_by_outcome.png', dpi=150,bbox_inches='tight')
+plt.savefig(f'figures/{vital}_trend.png', dpi=150, bbox_inches='tight')
+plt.show()
