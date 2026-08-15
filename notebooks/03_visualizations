@@ -1,0 +1,57 @@
+# Vital Sign Trends: Survivors vs. Non-Survivors
+## Standalone visualization notebook for the ICU vital sign trend analysis. This reads pre-aggregated data exported from the main analysis notebook rather than re-computing from raw MIMIC-III tables, so this notebook can be run independently and regenerate figures.
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+os.makedirs('figures',exist_ok = True)
+
+# Load aggregated data
+trend = pd.read_csv('data/trend_data.csv')
+hourly = pd.read_csv('data/hourly_data.csv')
+print(trend.shape, hourly.shape)
+trend.head()
+
+# cohort size
+cohort_n = hourly. groupby('survived')['icustay_id'].nunique()
+print("Patients contributing to vital trends: ", cohort_n)
+
+# combined figure - all six vitals
+vitals_list = trend['vital'].unique()
+colors = {1: 'tab:blue', 0: 'tab:red'}
+labels = {1: 'Survived', 0: 'Did not survive'}
+
+fig, axes = plt.subplots(len(vitals_list), 1, figsize=(8, 4 * len(vitals_list)))
+
+for ax, vital in zip(axes, vitals_list):
+  subset = trend[trend['vital'] == vital]
+  for outcome in [1,0]:
+    line = subset[subset['survived'] == outcome].sort_values('hour')
+    ax.plot(line['hour'], line['valuenum'], label=labels[outcome],
+      color = colors[outcome], marker = 'o', markersize=3)
+    ax.set_title(vital)
+    ax.set_xlabel('Hours since ICU admission')
+    ax.set_ylabel('Mean value')
+    ax.legend()
+    ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig('figures/vital_trends_by_outcome.png', dpi=150, bbox_inches = 'tight')
+plt.show()
+
+# individual vital figures
+for vital in vitals_list:
+  fig, ax = plt.subplots(figsize=(8,4))
+  subset = trend[trend['vital'] == vital]
+  for outcome in [1,0]:
+    line = subset[subset['survived'] == outcome].sort_values('hour')
+    ax.plot(line['hour'], line['valuenum'], label=labels[outcome],
+      color=colors[outcome], marker='o', markersize=3)
+    ax.set_title(f'{vital} - first 24h, survivors vs. non-survivors')
+    ax.set_xlabel('Hours since ICU admission')
+    ax.set_ylabel('Mean value')
+    ax.legend()
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f'figures/{vital}_trend.png', dpi = 150, bbox_inches='tight')
+    plt.show()
+    plt.close()
